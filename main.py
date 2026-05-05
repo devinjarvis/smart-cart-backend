@@ -1,3 +1,4 @@
+print("🔥 NEW VERSION LOADED 🔥")
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
