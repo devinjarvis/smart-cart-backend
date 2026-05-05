@@ -175,3 +175,6 @@ def ui():
     </body>
     </html>
     """
+@app.get("/check")
+def check():
+    return {"status": "ok", "version": "NEW CODE"}
