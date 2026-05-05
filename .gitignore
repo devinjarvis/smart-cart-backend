@@ -1,0 +1,16 @@
+# Firebase secret key (DO NOT upload)
+firebase_key.json
+
+# Virtual environment
+venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code settings (optional)
+.vscode/
