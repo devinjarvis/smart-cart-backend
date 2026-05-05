@@ -1,4 +1,3 @@
-print("🔥 NEW VERSION LOADED 🔥")
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
@@ -6,7 +5,7 @@ import qrcode
 import base64
 from io import BytesIO
 
-from firebase_db import db  # Firebase connection
+print("🔥 NEW VERSION LOADED 🔥")
 
 app = FastAPI(
     title="Smart Cart API",
@@ -46,6 +45,8 @@ def home():
 # -------------------------------
 @app.post("/add-item")
 def add_item(item: Item):
+    from firebase_db import db  # moved here
+
     doc_ref = db.collection("cart").document(item.user_id)
     cart = doc_ref.get().to_dict() or {}
 
@@ -59,6 +60,8 @@ def add_item(item: Item):
 # -------------------------------
 @app.post("/remove-item")
 def remove_item(item: Item):
+    from firebase_db import db  # moved here
+
     doc_ref = db.collection("cart").document(item.user_id)
     cart = doc_ref.get().to_dict() or {}
 
@@ -75,6 +78,8 @@ def remove_item(item: Item):
 # -------------------------------
 @app.get("/cart/{user_id}")
 def get_cart(user_id: str):
+    from firebase_db import db  # moved here
+
     doc_ref = db.collection("cart").document(user_id)
     cart = doc_ref.get().to_dict() or {}
     return cart
@@ -84,6 +89,8 @@ def get_cart(user_id: str):
 # -------------------------------
 @app.post("/generate-bill")
 def generate_bill(user: User):
+    from firebase_db import db  # moved here
+
     doc_ref = db.collection("cart").document(user.user_id)
     cart = doc_ref.get().to_dict() or {}
 
@@ -106,7 +113,14 @@ def generate_bill(user: User):
     }
 
 # -------------------------------
-# Simple UI for demo
+# Debug check
+# -------------------------------
+@app.get("/check")
+def check():
+    return {"status": "ok", "version": "FINAL"}
+
+# -------------------------------
+# Simple UI
 # -------------------------------
 @app.get("/ui", response_class=HTMLResponse)
 def ui():
@@ -176,6 +190,3 @@ def ui():
     </body>
     </html>
     """
-@app.get("/check")
-def check():
-    return {"status": "ok", "version": "NEW CODE"}
