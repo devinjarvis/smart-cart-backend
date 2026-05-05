@@ -1,123 +1,33 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-import qrcode
 import base64
-from io import BytesIO
-import json
+import qrcode
+import io
 
-# 🔥 Firebase
 from firebase_db import db
 
 app = FastAPI()
 
-# ----------------------------
-# Models
-# ----------------------------
+# =========================
+# MODEL
+# =========================
 class Item(BaseModel):
     user_id: str
-    product: str
+    item: str
 
-class User(BaseModel):
-    user_id: str
 
-# ----------------------------
-# Home Routes (IMPORTANT)
-# ----------------------------
+# =========================
+# HOME
+# =========================
 @app.get("/")
 def home():
-    return {"message": "Home working"}
+    return {"message": "Smart Cart Backend Running"}
 
-@app.get("/check")
-def check():
-    return {"status": "ok"}
 
-@app.get("/test")
-def test():
-    return {"message": "Backend running"}
-
-# ----------------------------
-# Add Item
-# ----------------------------
-@app.post("/add-item")
-def add_item(item: Item):
-    ref = db.collection("cart").document(item.user_id)
-    doc = ref.get()
-
-    cart = doc.to_dict() if doc.exists else {}
-
-    cart[item.product] = cart.get(item.product, 0) + 1
-    ref.set(cart)
-
-    return {"message": "Item added", "cart": cart}
-
-# ----------------------------
-# Remove Item
-# ----------------------------
-@app.post("/remove-item")
-def remove_item(item: Item):
-    ref = db.collection("cart").document(item.user_id)
-    doc = ref.get()
-
-    if not doc.exists:
-        return {"error": "Cart empty"}
-
-    cart = doc.to_dict()
-
-    if item.product in cart:
-        cart[item.product] -= 1
-        if cart[item.product] <= 0:
-            del cart[item.product]
-
-    ref.set(cart)
-
-    return {"message": "Item removed", "cart": cart}
-
-# ----------------------------
-# Get Cart
-# ----------------------------
-@app.get("/cart/{user_id}")
-def get_cart(user_id: str):
-    doc = db.collection("cart").document(user_id).get()
-    return doc.to_dict() if doc.exists else {}
-
-# ----------------------------
-# Generate Bill
-# ----------------------------
-@app.post("/generate-bill")
-def generate_bill(user: User):
-    doc = db.collection("cart").document(user.user_id).get()
-
-    if not doc.exists:
-        return {"error": "Cart empty"}
-
-    cart = doc.to_dict()
-
-    # Simple pricing logic
-    total = sum(v * 50 for v in cart.values())
-
-    bill_data = {
-        "user": user.user_id,
-        "cart": cart,
-        "total": total
-    }
-
-    # Generate QR
-    qr = qrcode.make(json.dumps(bill_data))
-    buffer = BytesIO()
-    qr.save(buffer, format="PNG")
-
-    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
-
-    return {
-        "cart": cart,
-        "total": total,
-        "qr": qr_base64
-    }
-
-# ----------------------------
-# UI (UPDATED CLEAN VERSION)
-# ----------------------------
+# =========================
+# UI
+# =========================
 @app.get("/ui", response_class=HTMLResponse)
 def ui():
     return """
@@ -127,45 +37,65 @@ def ui():
         <style>
             body {
                 font-family: Arial;
-                background: #f5f5f5;
-                text-align: center;
-                margin-top: 50px;
+                background: #f4f6f8;
+                padding: 20px;
             }
 
-            .card {
-                background: white;
-                padding: 30px;
-                width: 350px;
+            h1 {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+
+            .container {
+                max-width: 900px;
                 margin: auto;
+                background: white;
+                padding: 20px;
                 border-radius: 10px;
                 box-shadow: 0 4px 10px rgba(0,0,0,0.1);
             }
 
             input {
-                width: 90%;
                 padding: 10px;
-                margin: 8px;
-                border-radius: 5px;
-                border: 1px solid #ccc;
+                margin: 5px;
+                width: 200px;
             }
 
             button {
-                padding: 10px 15px;
+                padding: 8px 12px;
                 margin: 5px;
                 border: none;
-                border-radius: 5px;
                 cursor: pointer;
+                border-radius: 5px;
+            }
+
+            .btn-green { background: #4CAF50; color: white; }
+            .btn-red { background: #f44336; color: white; }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+
+            th, td {
+                padding: 10px;
+                text-align: center;
+                border-bottom: 1px solid #ddd;
+            }
+
+            .total-box {
+                margin-top: 20px;
+                padding: 15px;
+                background: #e8f5e9;
+                text-align: center;
+                font-size: 18px;
                 font-weight: bold;
             }
 
-            .add { background: #4CAF50; color: white; }
-            .remove { background: #f44336; color: white; }
-            .bill { background: #2196F3; color: white; }
-
-            #output {
+            .actions {
                 margin-top: 20px;
-                text-align: left;
-                font-size: 14px;
+                text-align: center;
             }
 
             img {
@@ -176,69 +106,198 @@ def ui():
 
     <body>
 
-        <div class="card">
-            <h2>🛒 Smart Cart</h2>
+    <div class="container">
+        <h1>🛒 Smart Cart</h1>
 
-            <input id="user" placeholder="User ID" value="u1"><br>
-            <input id="product" placeholder="Product name"><br>
+        <input id="user" value="u1" placeholder="User ID">
+        <input id="product" placeholder="Detected item">
 
-            <button class="add" onclick="addItem()">Add</button>
-            <button class="remove" onclick="removeItem()">Remove</button>
-            <button class="bill" onclick="bill()">Generate Bill</button>
-
-            <div id="output"></div>
-            <img id="qr" width="200"/>
+        <div>
+            <button class="btn-green" onclick="add()">Add</button>
+            <button class="btn-red" onclick="remove()">Remove</button>
         </div>
 
-        <script>
-            const base = window.location.origin;
+        <table id="cartTable">
+            <tr>
+                <th>Item</th>
+                <th>Quantity</th>
+            </tr>
+        </table>
 
-            async function addItem() {
-                const user = document.getElementById("user").value;
-                const product = document.getElementById("product").value;
+        <div class="total-box" id="total">
+            Total: ₹0
+        </div>
 
-                await fetch(base + "/add-item", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({user_id: user, product: product})
-                });
+        <div class="actions">
+            <button class="btn-green" onclick="generateBill()">Generate Bill</button>
+            <button class="btn-red" onclick="clearCart()">Clear Cart</button>
+        </div>
 
-                document.getElementById("output").innerText = "Item added!";
+        <div id="qr"></div>
+    </div>
+
+    <script>
+
+        async function loadCart() {
+            let user = document.getElementById("user").value;
+
+            let res = await fetch(`/cart/${user}`);
+            let data = await res.json();
+
+            let table = document.getElementById("cartTable");
+            table.innerHTML = "<tr><th>Item</th><th>Quantity</th></tr>";
+
+            let total = 0;
+
+            for (let item in data) {
+                table.innerHTML += `
+                    <tr>
+                        <td>${item}</td>
+                        <td>${data[item]}</td>
+                    </tr>
+                `;
+                total += data[item] * 100;
             }
 
-            async function removeItem() {
-                const user = document.getElementById("user").value;
-                const product = document.getElementById("product").value;
+            document.getElementById("total").innerText = "Total: ₹" + total;
+        }
 
-                await fetch(base + "/remove-item", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({user_id: user, product: product})
-                });
+        async function add() {
+            let user = document.getElementById("user").value;
+            let product = document.getElementById("product").value;
 
-                document.getElementById("output").innerText = "Item removed!";
-            }
+            await fetch("/add-item", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({user_id: user, item: product})
+            });
 
-            async function bill() {
-                const user = document.getElementById("user").value;
+            loadCart();
+        }
 
-                const res = await fetch(base + "/generate-bill", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({user_id: user})
-                });
+        async function remove() {
+            let user = document.getElementById("user").value;
+            let product = document.getElementById("product").value;
 
-                const data = await res.json();
+            await fetch("/remove-item", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({user_id: user, item: product})
+            });
 
-                document.getElementById("output").innerText =
-                    "Cart:\\n" + JSON.stringify(data.cart, null, 2) +
-                    "\\n\\nTotal: ₹" + data.total;
+            loadCart();
+        }
 
-                document.getElementById("qr").src =
-                    "data:image/png;base64," + data.qr;
-            }
-        </script>
+        async function generateBill() {
+            let user = document.getElementById("user").value;
+
+            let res = await fetch("/generate-bill", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({user_id: user, item: ""})
+            });
+
+            let data = await res.json();
+
+            document.getElementById("qr").innerHTML =
+                `<img src="data:image/png;base64,${data.qr}" width="200"/>`;
+        }
+
+        async function clearCart() {
+            let user = document.getElementById("user").value;
+
+            await fetch(`/clear-cart/${user}`, {
+                method: "POST"
+            });
+
+            loadCart();
+        }
+
+        loadCart();
+
+    </script>
 
     </body>
     </html>
     """
+
+
+# =========================
+# ADD ITEM
+# =========================
+@app.post("/add-item")
+def add_item(data: Item):
+    ref = db.collection("cart").document(data.user_id)
+    doc = ref.get()
+
+    cart = doc.to_dict() if doc.exists else {}
+
+    cart[data.item] = cart.get(data.item, 0) + 1
+    ref.set(cart)
+
+    return {"cart": cart}
+
+
+# =========================
+# REMOVE ITEM
+# =========================
+@app.post("/remove-item")
+def remove_item(data: Item):
+    ref = db.collection("cart").document(data.user_id)
+    doc = ref.get()
+
+    if not doc.exists:
+        return {"cart": {}}
+
+    cart = doc.to_dict()
+
+    if data.item in cart:
+        cart[data.item] -= 1
+        if cart[data.item] <= 0:
+            del cart[data.item]
+
+    ref.set(cart)
+    return {"cart": cart}
+
+
+# =========================
+# CLEAR CART
+# =========================
+@app.post("/clear-cart/{user_id}")
+def clear_cart(user_id: str):
+    db.collection("cart").document(user_id).delete()
+    return {"status": "cleared"}
+
+
+# =========================
+# GET CART
+# =========================
+@app.get("/cart/{user_id}")
+def get_cart(user_id: str):
+    doc = db.collection("cart").document(user_id).get()
+    return doc.to_dict() if doc.exists else {}
+
+
+# =========================
+# GENERATE BILL + QR
+# =========================
+@app.post("/generate-bill")
+def generate_bill(data: Item):
+    doc = db.collection("cart").document(data.user_id).get()
+    cart = doc.to_dict() if doc.exists else {}
+
+    total = sum(cart.values()) * 100
+
+    qr_data = f"User: {data.user_id}, Total: ₹{total}"
+
+    img = qrcode.make(qr_data)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+
+    qr_base64 = base64.b64encode(buf.getvalue()).decode()
+
+    return {
+        "cart": cart,
+        "total": total,
+        "qr": qr_base64
+    }
