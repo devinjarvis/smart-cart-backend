@@ -1,14 +1,26 @@
+import os
+import json
 import firebase_admin
 from firebase_admin import credentials, firestore
-import os, json
 
-if not firebase_admin._apps:
-    if "FIREBASE_KEY" in os.environ:
-        cred_dict = json.loads(os.environ["FIREBASE_KEY"])
-        cred = credentials.Certificate(cred_dict)
-    else:
-        raise Exception("FIREBASE_KEY not set in environment variables")
+_db = None
 
-    firebase_admin.initialize_app(cred)
+def get_db():
+    global _db
+    if _db is not None:
+        return _db
 
-db = firestore.client()
+    # Read from env (Render)
+    key_json = os.getenv("FIREBASE_KEY")
+    if not key_json:
+        raise Exception("FIREBASE_KEY not set")
+
+    key_dict = json.loads(key_json)
+
+    # Init only once
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(key_dict)
+        firebase_admin.initialize_app(cred)
+
+    _db = firestore.client()
+    return _db
