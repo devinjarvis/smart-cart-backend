@@ -1,22 +1,31 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from fastapi.responses import HTMLResponse
 import qrcode
-from firebase_db import db   # <-- Firebase connection
+import base64
+from io import BytesIO
 
-app = FastAPI()
+from firebase_db import db  # Firebase connection
 
-# -------------------------
-# PRICE LIST
-# -------------------------
+app = FastAPI(
+    title="Smart Cart API",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# -------------------------------
+# Product price list
+# -------------------------------
 prices = {
     "milk": 50,
     "bread": 30,
-    "chocolate": 20
+    "eggs": 70,
+    "chocolate": 40
 }
 
-# -------------------------
-# REQUEST MODELS
-# -------------------------
+# -------------------------------
+# Request models
+# -------------------------------
 class Item(BaseModel):
     user_id: str
     product: str
@@ -24,101 +33,145 @@ class Item(BaseModel):
 class User(BaseModel):
     user_id: str
 
-# -------------------------
-# ROOT CHECK
-# -------------------------
+# -------------------------------
+# Home route
+# -------------------------------
 @app.get("/")
 def home():
-    return {"message": "Backend is running with Firebase"}
+    return {"message": "Backend is running"}
 
-# -------------------------
-# ADD ITEM (Firebase)
-# -------------------------
+# -------------------------------
+# Add item
+# -------------------------------
 @app.post("/add-item")
-async def add_item(item: Item):
-    ref = db.collection("cart").document(item.user_id)
-
-    cart = ref.get().to_dict() or {}
+def add_item(item: Item):
+    doc_ref = db.collection("cart").document(item.user_id)
+    cart = doc_ref.get().to_dict() or {}
 
     cart[item.product] = cart.get(item.product, 0) + 1
+    doc_ref.set(cart)
 
-    ref.set(cart)
+    return {"status": "added", "cart": cart}
 
-    return {
-        "status": "added",
-        "cart": cart
-    }
-
-# -------------------------
-# REMOVE ITEM (Firebase)
-# -------------------------
+# -------------------------------
+# Remove item
+# -------------------------------
 @app.post("/remove-item")
-async def remove_item(item: Item):
-    ref = db.collection("cart").document(item.user_id)
-
-    cart = ref.get().to_dict() or {}
+def remove_item(item: Item):
+    doc_ref = db.collection("cart").document(item.user_id)
+    cart = doc_ref.get().to_dict() or {}
 
     if item.product in cart:
         cart[item.product] -= 1
-
         if cart[item.product] <= 0:
             del cart[item.product]
 
-    ref.set(cart)
+    doc_ref.set(cart)
+    return {"status": "removed", "cart": cart}
 
-    return {
-        "status": "removed",
-        "cart": cart
-    }
-
-# -------------------------
-# GET CART (Firebase)
-# -------------------------
+# -------------------------------
+# Get cart
+# -------------------------------
 @app.get("/cart/{user_id}")
 def get_cart(user_id: str):
-    cart = db.collection("cart").document(user_id).get().to_dict()
-    return cart or {}
+    doc_ref = db.collection("cart").document(user_id)
+    cart = doc_ref.get().to_dict() or {}
+    return cart
 
-# -------------------------
-# GENERATE BILL + QR
-# -------------------------
+# -------------------------------
+# Generate bill + QR
+# -------------------------------
 @app.post("/generate-bill")
-async def generate_bill(user: User):
-    cart = db.collection("cart").document(user.user_id).get().to_dict() or {}
+def generate_bill(user: User):
+    doc_ref = db.collection("cart").document(user.user_id)
+    cart = doc_ref.get().to_dict() or {}
 
-    total = sum(prices[item] * qty for item, qty in cart.items())
+    total = 0
+    for item, qty in cart.items():
+        total += prices.get(item, 0) * qty
 
-    # Generate QR
-    upi_link = f"upi://pay?pa=demo@upi&am={total}&cu=INR"
-    img = qrcode.make(upi_link)
-    img.save("qr.png")
+    # Create QR
+    qr_data = f"Pay ₹{total}"
+    qr = qrcode.make(qr_data)
+
+    buffer = BytesIO()
+    qr.save(buffer, format="PNG")
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
 
     return {
-        "status": "bill_generated",
-        "total": total,
         "cart": cart,
-        "qr_file": "qr.png"
+        "total": total,
+        "qr": qr_base64
     }
 
-# -------------------------
-# VALIDATE CART (Firebase)
-# -------------------------
-@app.post("/validate-cart")
-async def validate_cart(data: dict):
-    user_id = data["user_id"]
-    detected_items = data["detected_items"]
+# -------------------------------
+# Simple UI for demo
+# -------------------------------
+@app.get("/ui", response_class=HTMLResponse)
+def ui():
+    return """
+    <html>
+    <head>
+        <title>Smart Cart</title>
+        <style>
+            body { font-family: Arial; text-align: center; margin-top: 50px; }
+            input, button { padding: 10px; margin: 10px; }
+        </style>
+    </head>
+    <body>
+        <h1>Smart Shopping Cart</h1>
 
-    detected_count = {}
-    for item in detected_items:
-        detected_count[item] = detected_count.get(item, 0) + 1
+        <input id="user" value="u1" placeholder="User ID"><br>
+        <input id="product" placeholder="Product"><br>
 
-    stored_cart = db.collection("cart").document(user_id).get().to_dict() or {}
+        <button onclick="add()">Add</button>
+        <button onclick="remove()">Remove</button>
+        <button onclick="bill()">Generate Bill</button>
 
-    if detected_count != stored_cart:
-        return {
-            "status": "mismatch",
-            "detected": detected_count,
-            "stored": stored_cart
-        }
+        <pre id="output"></pre>
 
-    return {"status": "ok"} 
+        <script>
+            async function add() {
+                let res = await fetch("/add-item", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        user_id: user.value,
+                        product: product.value
+                    })
+                });
+                output.innerText = JSON.stringify(await res.json(), null, 2);
+            }
+
+            async function remove() {
+                let res = await fetch("/remove-item", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        user_id: user.value,
+                        product: product.value
+                    })
+                });
+                output.innerText = JSON.stringify(await res.json(), null, 2);
+            }
+
+            async function bill() {
+                let res = await fetch("/generate-bill", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        user_id: user.value
+                    })
+                });
+                let data = await res.json();
+
+                output.innerText = JSON.stringify(data, null, 2);
+
+                let img = document.createElement("img");
+                img.src = "data:image/png;base64," + data.qr;
+                document.body.appendChild(img);
+            }
+        </script>
+    </body>
+    </html>
+    """
