@@ -1,0 +1,38 @@
+import json
+import requests
+import time
+
+BACKEND_URL = "https://smart-cart-backend-ewts.onrender.com/add-item"
+
+previous_items = set()
+
+while True:
+
+    try:
+
+        with open("detections.json", "r") as f:
+            data = json.load(f)
+
+        current_items = set(data["detected_items"])
+
+        # Find NEW items only
+        new_items = current_items - previous_items
+
+        for item in new_items:
+
+            payload = {
+                "user_id": "u1",
+                "item": item
+            }
+
+            response = requests.post(BACKEND_URL, json=payload)
+
+            print("Added:", item)
+            print(response.json())
+
+        previous_items = current_items
+
+    except Exception as e:
+        print("Error:", e)
+
+    time.sleep(2)
