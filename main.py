@@ -283,14 +283,21 @@ def get_cart(user_id: str):
 # =========================
 @app.post("/generate-bill")
 def generate_bill(data: Item):
+
     doc = db.collection("cart").document(data.user_id).get()
     cart = doc.to_dict() if doc.exists else {}
 
     total = sum(cart.values()) * 100
 
-    qr_data = f"User: {data.user_id}, Total: ₹{total}"
+    # YOUR UPI ID
+    upi_id = "devinsiju@oksbi"
 
-    img = qrcode.make(qr_data)
+    # UPI payment link
+    upi_link = f"upi://pay?pa={upi_id}&pn=SmartCart&am={total}&cu=INR"
+
+    # Generate QR
+    img = qrcode.make(upi_link)
+
     buf = io.BytesIO()
     img.save(buf, format="PNG")
 
