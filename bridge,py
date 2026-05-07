@@ -2,9 +2,7 @@ import json
 import requests
 import time
 
-BACKEND_URL = "https://smart-cart-backend-ewts.onrender.com/add-item"
-
-previous_items = set()
+BACKEND_URL = "https://smart-cart-backend-ewts.onrender.com/update-cart"
 
 while True:
 
@@ -13,24 +11,19 @@ while True:
         with open("detections.json", "r") as f:
             data = json.load(f)
 
-        current_items = set(data["detected_items"])
+        detected_items = data.get("detected_items", [])
 
-        # Find NEW items only
-        new_items = current_items - previous_items
+        payload = {
+            "user_id": "u1",
+            "items": detected_items          # send the full list every cycle
+        }
 
-        for item in new_items:
+        response = requests.post(BACKEND_URL, json=payload)
 
-            payload = {
-                "user_id": "u1",
-                "item": item
-            }
+        result = response.json()
 
-            response = requests.post(BACKEND_URL, json=payload)
-
-            print("Added:", item)
-            print(response.json())
-
-        previous_items = current_items
+        print("Cart synced:", result.get("cart"))
+        print("Detected:", result.get("synced_items"))
 
     except Exception as e:
         print("Error:", e)

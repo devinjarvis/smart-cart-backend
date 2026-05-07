@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from typing import List
 import base64
 import qrcode
 import io
@@ -10,11 +11,16 @@ from firebase_db import db
 app = FastAPI()
 
 # =========================
-# MODEL
+# MODELS
 # =========================
 class Item(BaseModel):
     user_id: str
     item: str
+
+
+class CartUpdate(BaseModel):
+    user_id: str
+    items: List[str]
 
 
 # =========================
@@ -549,6 +555,47 @@ def remove_item(data: Item):
     ref.set(cart)
 
     return {"cart": cart}
+
+
+# =========================
+# UPDATE CART (sync from detector)
+# =========================
+@app.post("/update-cart")
+def update_cart(data: CartUpdate):
+    """
+    Accepts a full list of currently detected items and syncs the cart.
+    - Items newly detected are incremented.
+    - Items no longer detected are decremented (removed if count hits 0).
+    This keeps the cart in sync with what the camera sees in real time.
+    """
+
+    ref = db.collection("cart").document(data.user_id)
+
+    doc = ref.get()
+
+    cart = doc.to_dict() if doc.exists else {}
+
+    # Build a frequency map from the incoming detected items list
+    # (same item can appear multiple times if detected multiple times)
+    detected_counts: dict = {}
+    for item in data.items:
+        item = item.lower()
+        detected_counts[item] = detected_counts.get(item, 0) + 1
+
+    # Add newly detected items / increase counts
+    for item, count in detected_counts.items():
+        cart[item] = cart.get(item, 0) + count
+
+    # Remove items that are no longer detected (reduce by their previous count)
+    for item in list(cart.keys()):
+        if item not in detected_counts:
+            cart[item] -= 1
+            if cart[item] <= 0:
+                del cart[item]
+
+    ref.set(cart)
+
+    return {"cart": cart, "synced_items": detected_counts}
 
 
 # =========================
