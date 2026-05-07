@@ -267,7 +267,6 @@ def ui():
 
     <div class="container">
 
-        <!-- LEFT SIDE -->
         <div>
 
             <div class="card">
@@ -280,7 +279,7 @@ def ui():
 
                     <input type="text" id="user" placeholder="User ID" value="u1">
 
-                    <input type="text" id="item" placeholder="Detected item (milk, phone...)">
+                    <input type="text" id="item" placeholder="Detected item">
 
                     <button class="add-btn" onclick="addItem()">
                         + Add
@@ -331,7 +330,6 @@ def ui():
 
         </div>
 
-        <!-- RIGHT SIDE -->
         <div>
 
             <div class="card payment-card">
@@ -342,7 +340,7 @@ def ui():
                     ₹0
                 </h1>
 
-                <div class="qr-box" id="qr-box">
+                <div class="qr-box">
 
                     <h2>📱 Scan & Pay</h2>
 
@@ -366,39 +364,23 @@ def ui():
 
     </div>
 
-    <div class="feature-grid">
-
-        <div class="feature">
-            <h2>🤖</h2>
-            <h3>AI Powered</h3>
-            <p>Object detection ready</p>
-        </div>
-
-        <div class="feature">
-            <h2>⚡</h2>
-            <h3>Realtime Updates</h3>
-            <p>Instant cart updates</p>
-        </div>
-
-        <div class="feature">
-            <h2>🔒</h2>
-            <h3>Secure Payments</h3>
-            <p>UPI based payments</p>
-        </div>
-
-        <div class="feature">
-            <h2>☁️</h2>
-            <h3>Cloud Connected</h3>
-            <p>Firebase integration</p>
-        </div>
-
-    </div>
-
-    <div class="footer">
-        © 2026 Smart Cart System
-    </div>
-
 <script>
+
+const prices = {
+    "bottle": 50,
+    "cup": 80,
+    "book": 350,
+    "phone": 15000,
+    "laptop": 55000
+};
+
+const icons = {
+    "bottle": "🍼",
+    "cup": "☕",
+    "book": "📚",
+    "phone": "📱",
+    "laptop": "💻"
+};
 
 async function loadCart(){
 
@@ -416,11 +398,13 @@ async function loadCart(){
 
     for(let item in data){
 
-        total += data[item] * 100;
+        let price = prices[item] || 100;
+
+        total += data[item] * price;
 
         body.innerHTML += `
         <tr>
-            <td>${item}</td>
+            <td>${icons[item] || "🛒"} ${item}</td>
             <td>${data[item]}</td>
         </tr>
         `;
@@ -437,7 +421,7 @@ async function addItem(){
 
     let user = document.getElementById("user").value;
 
-    let item = document.getElementById("item").value;
+    let item = document.getElementById("item").value.toLowerCase();
 
     await fetch("/add-item",{
         method:"POST",
@@ -457,7 +441,7 @@ async function removeItem(){
 
     let user = document.getElementById("user").value;
 
-    let item = document.getElementById("item").value;
+    let item = document.getElementById("item").value.toLowerCase();
 
     await fetch("/remove-item",{
         method:"POST",
@@ -512,23 +496,29 @@ async function clearCart(){
 
 loadCart();
 
+setInterval(loadCart, 2000);
+
 </script>
 
 </body>
 </html>
 """
 
+
 # =========================
 # ADD ITEM
 # =========================
 @app.post("/add-item")
 def add_item(data: Item):
+
     ref = db.collection("cart").document(data.user_id)
+
     doc = ref.get()
 
     cart = doc.to_dict() if doc.exists else {}
 
     cart[data.item] = cart.get(data.item, 0) + 1
+
     ref.set(cart)
 
     return {"cart": cart}
@@ -539,7 +529,9 @@ def add_item(data: Item):
 # =========================
 @app.post("/remove-item")
 def remove_item(data: Item):
+
     ref = db.collection("cart").document(data.user_id)
+
     doc = ref.get()
 
     if not doc.exists:
@@ -548,11 +540,14 @@ def remove_item(data: Item):
     cart = doc.to_dict()
 
     if data.item in cart:
+
         cart[data.item] -= 1
+
         if cart[data.item] <= 0:
             del cart[data.item]
 
     ref.set(cart)
+
     return {"cart": cart}
 
 
@@ -561,7 +556,9 @@ def remove_item(data: Item):
 # =========================
 @app.post("/clear-cart/{user_id}")
 def clear_cart(user_id: str):
+
     db.collection("cart").document(user_id).delete()
+
     return {"status": "cleared"}
 
 
@@ -570,7 +567,9 @@ def clear_cart(user_id: str):
 # =========================
 @app.get("/cart/{user_id}")
 def get_cart(user_id: str):
+
     doc = db.collection("cart").document(user_id).get()
+
     return doc.to_dict() if doc.exists else {}
 
 
@@ -581,21 +580,32 @@ def get_cart(user_id: str):
 def generate_bill(data: Item):
 
     doc = db.collection("cart").document(data.user_id).get()
+
     cart = doc.to_dict() if doc.exists else {}
 
-    total = sum(cart.values()) * 100
+    prices = {
+        "bottle": 50,
+        "cup": 80,
+        "book": 350,
+        "phone": 15000,
+        "laptop": 55000
+    }
 
-    # YOUR UPI ID
+    total = 0
+
+    for item, qty in cart.items():
+        total += prices.get(item, 100) * qty
+
     upi_id = "devinsiju@oksbi"
 
-    # UPI payment link
     upi_link = f"upi://pay?pa={upi_id}&pn=SmartCart&am={total}&cu=INR"
 
-    # Generate QR
     img = qrcode.make(upi_link)
 
     buf = io.BytesIO()
+
     img.save(buf, format="PNG")
+
     qr_base64 = base64.b64encode(buf.getvalue()).decode()
 
     return {
